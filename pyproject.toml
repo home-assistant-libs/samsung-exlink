@@ -1,0 +1,54 @@
+[project]
+name = "samsung-exlink"
+version = "0.0.0"
+description = "Async library to control Samsung consumer TVs over RS232"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Paulus Schoutsen", email = "balloob@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "serialx[esphome]>=1.2.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+    "Topic :: System :: Hardware",
+    "Framework :: AsyncIO",
+]
+
+[project.scripts]
+samsung-exlink = "samsung_exlink.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/home-assistant-libs/samsung-exlink"
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pytest-asyncio>=1.0",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.10",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+timeout = 1
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
