@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest
@@ -157,6 +158,26 @@ async def test_disconnect_notifies_subscribers_with_none(
     tv.subscribe(lambda s: states.append(s))
     await tv.disconnect()
     assert states[-1] is None
+
+
+async def test_subscriber_unsubscribing_during_notify_does_not_skip_others(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A subscriber that unsubscribes mid-notify must not skip later ones."""
+    seen_first: list = []
+    seen_second: list = []
+
+    def first(state):
+        seen_first.append(state)
+        unsubscribe_first()  # mutate the subscriber list during iteration
+
+    unsubscribe_first = tv.subscribe(first)
+    tv.subscribe(lambda s: seen_second.append(s))
+
+    await tv.power_on()
+
+    assert seen_first  # first ran
+    assert seen_second  # second was not skipped despite the mutation
 
 
 async def test_split_response_bytes_are_buffered(
@@ -474,3 +495,88 @@ async def test_timeout_when_no_response(mock_serial: MockSerialConnection) -> No
             await tv.power_on()
     finally:
         await tv.disconnect()
+
+
+def _query_response(category: int, value: int) -> bytes:
+    """Build a 16-byte query reply for ``category`` carrying ``value``."""
+    head = bytes.fromhex("03 0c f1 03 0c f5")
+    payload9 = bytes([0x08, 0xF0, category, 0x00, 0x00, 0xF1, value, 0x00, 0x00])
+    chk = (256 - (sum(head[3:]) + sum(payload9)) & 0xFF) & 0xFF
+    return head + payload9 + bytes([chk])
+
+
+def _status_handler(
+    mock_serial: MockSerialConnection, values: dict[int, int]
+) -> Callable[[bytes], None]:
+    """Return a handler that answers each query category from ``values``."""
+
+    def handler(frame: bytes) -> None:
+        cmd1, category = frame[2], frame[3]
+        if cmd1 == 0xF0 and category in values:
+            mock_serial.feed(_query_response(category, values[category]))
+        else:
+            mock_serial.feed(ACK_RESPONSE)
+
+    return handler
+
+
+async def test_mute_toggle_tracks_known_state(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A mute toggle flips a known mute state; it stays unknown otherwise."""
+    await tv.mute()
+    assert tv.state.mute is None
+
+    tv._state.mute = False
+    await tv.mute()
+    assert tv.state.mute is True
+    await tv.mute()
+    assert tv.state.mute is False
+
+
+async def test_set_mute_queries_then_toggles_when_unknown(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """set_mute reads the current state, then toggles since it differs."""
+    mock_serial.set_command_handler(_status_handler(mock_serial, {0x02: 0x00}))
+
+    await tv.set_mute(True)
+
+    assert mock_serial.last_payload == (0x02, 0x00, 0x00, 0x00)
+    assert tv.state.mute is True
+
+
+async def test_set_mute_noop_when_already_in_state(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """set_mute sends nothing when the TV is already in the requested state."""
+    tv._state.mute = True
+    await tv.set_mute(True)
+    assert not mock_serial.written_frames
+
+
+async def test_refresh_when_on_queries_volume_and_mute(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """refresh reads power, then volume and mute when the TV is on."""
+    mock_serial.set_command_handler(
+        _status_handler(mock_serial, {0x00: 0x05, 0x01: 25, 0x02: 0x00})
+    )
+
+    await tv.refresh()
+
+    assert tv.state.power is True
+    assert tv.state.volume == 25
+    assert tv.state.mute is False
+
+
+async def test_refresh_when_off_sets_power_false(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A powered-off TV does not answer; refresh treats that as off."""
+    mock_serial.set_auto_response(None)
+
+    await tv.refresh()
+
+    assert tv.state.power is False
+    assert tv.state.volume is None

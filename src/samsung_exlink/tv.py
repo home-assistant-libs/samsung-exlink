@@ -15,6 +15,7 @@ from .const import (
     COMMAND_TIMEOUT,
     FRAME_LENGTH,
     HEADER,
+    MAX_VOLUME,
     NACK_RESPONSE,
     QUERY_DATA_FOLLOWS,
     QUERY_PAYLOAD_LENGTH,
@@ -157,8 +158,8 @@ class SamsungTV:
 
     async def set_volume(self, level: int) -> None:
         """Set the volume directly (0-100)."""
-        if not 0 <= level <= 100:
-            raise ValueError(f"Volume must be 0-100, got {level}")
+        if not 0 <= level <= MAX_VOLUME:
+            raise ValueError(f"Volume must be 0-{MAX_VOLUME}, got {level}")
         await self._send_command(0x01, 0x00, 0x00, level)
         self._update_state(volume=level)
 
@@ -173,6 +174,21 @@ class SamsungTV:
     async def mute(self) -> None:
         """Toggle mute."""
         await self._send_command(0x02, 0x00, 0x00, 0x00)
+        if self._state.mute is not None:
+            self._update_state(mute=not self._state.mute)
+
+    async def set_mute(self, muted: bool) -> None:
+        """Set mute to an absolute state.
+
+        The TV only exposes a mute toggle, so this reads the current mute
+        state (querying the TV when it is unknown) and toggles only when it
+        differs from the requested state.
+        """
+        current = self._state.mute
+        if current is None:
+            current = await self.query_mute()
+        if current != muted:
+            await self.mute()
 
     async def channel_up(self) -> None:
         """Channel up."""
@@ -348,6 +364,39 @@ class SamsungTV:
                     break
 
         return mapping
+
+    async def refresh(self) -> None:
+        """Refresh power and, when the TV is on, volume/mute/source.
+
+        A powered-off Samsung TV does not answer status queries -- that is
+        expected, not an error. When the power query times out (or reports a
+        non-on state) ``power`` is set to ``False`` and the remaining
+        attributes are left untouched. Connection errors propagate so the
+        caller can tear down and reconnect.
+
+        ``input_source`` is only refreshed when a source map is configured,
+        since the raw source byte cannot otherwise be translated.
+        """
+        try:
+            power = await self.query_power()
+        except TimeoutError:
+            self._update_state(power=False)
+            return
+
+        if power is not PowerState.ON:
+            return
+
+        for query in (self.query_volume, self.query_mute):
+            try:
+                await query()
+            except TimeoutError:
+                pass
+
+        if self._source_map:
+            try:
+                await self.query_source_input()
+            except TimeoutError:
+                pass
 
     # -- Internals --
 
@@ -555,7 +604,9 @@ class SamsungTV:
 
     def _notify_subscribers(self) -> None:
         state = self._state.copy() if self._connected else None
-        for callback in self._subscribers:
+        # Iterate a copy: a subscriber may unsubscribe (directly or by
+        # triggering teardown) while being notified, mutating the list.
+        for callback in list(self._subscribers):
             try:
                 callback(state)
             except Exception:

@@ -13,7 +13,7 @@ from aioesphomeapi import APIClient
 from aioesphomeapi.model import InfraredInfo
 from infrared_protocols.codes.samsung.tv import SamsungTVCode
 
-DEVICE_HOST = "192.168.1.155"
+DEVICE_HOST = "192.168.1.149"
 DEVICE_PORT = 6053
 
 SEQUENCE = [

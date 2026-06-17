@@ -7,6 +7,9 @@ from enum import Enum
 BAUD_RATE = 9600
 COMMAND_TIMEOUT = 2.0  # seconds to wait for an ack/nack response
 
+# The volume scale used by ``set_volume`` and reported by ``query_volume``.
+MAX_VOLUME = 100
+
 # All Samsung consumer-TV commands are 7-byte frames:
 #     [HEADER0][HEADER1][cmd1][cmd2][cmd3][value][checksum]
 HEADER = b"\x08\x22"

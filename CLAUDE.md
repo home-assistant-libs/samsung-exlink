@@ -3,6 +3,8 @@
 Async Python library to control Samsung consumer TVs over their RS232 serial
 connection (Samsung markets this as "ExLink" / EX-Link / EXT Link).
 
+The version is always to be kept at 0.0.0. It's automatically set from the GitHub release tag.
+
 ## Project structure
 
 ```
