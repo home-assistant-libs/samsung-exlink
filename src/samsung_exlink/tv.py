@@ -436,7 +436,7 @@ class SamsungTV:
 
         Caller MUST hold ``self._write_lock``.
         """
-        if self._writer is None:
+        if not self._connected or self._writer is None:
             raise SamsungTVError("Not connected")
 
         loop = asyncio.get_running_loop()
@@ -460,37 +460,47 @@ class SamsungTV:
             self._pending_expects_query = False
 
     async def _teardown(self) -> None:
-        """Tear down the connection."""
+        """Tear down the connection.
+
+        The reader, writer and read task are dropped before anything is
+        awaited, so a failure while closing an already-broken transport
+        cannot leave a dead stream behind for later commands to write to.
+        """
         if not self._connected:
             return
         self._connected = False
 
-        current = asyncio.current_task()
+        read_task, self._read_task = self._read_task, None
+        writer, self._writer = self._writer, None
+        self._reader = None
 
-        if self._read_task is not None and self._read_task is not current:
-            self._read_task.cancel()
+        if read_task is not None and read_task is not asyncio.current_task():
+            read_task.cancel()
             try:
-                await self._read_task
+                await read_task
             except asyncio.CancelledError:
                 pass
-        self._read_task = None
 
-        if self._writer is not None:
-            self._writer.close()
-            await self._writer.wait_closed()
-            self._writer = None
-            self._reader = None
+        if writer is not None:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                # The transport is already gone (e.g. the ESPHome proxy lost
+                # its API connection); there is nothing left to clean up.
+                _LOGGER.debug("Error closing serial port", exc_info=True)
 
         self._notify_subscribers()
 
     async def _read_loop(self) -> None:
         """Continuously read responses and unsolicited frames from the TV."""
-        assert self._reader is not None
+        reader = self._reader
+        assert reader is not None
         buf = b""
 
         while self._connected:
             try:
-                data = await self._reader.read(64)
+                data = await reader.read(64)
             except Exception:
                 if not self._connected:
                     return
