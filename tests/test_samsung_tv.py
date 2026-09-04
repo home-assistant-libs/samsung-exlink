@@ -18,6 +18,7 @@ from samsung_exlink import (
     PictureMode,
     PowerState,
     SamsungTV,
+    SamsungTVError,
     SoundMode,
 )
 
@@ -194,6 +195,86 @@ async def test_split_response_bytes_are_buffered(
 
     mock_serial.set_command_handler(handler)
     await tv.power_on()
+
+
+def _break_transport(mock_serial: MockSerialConnection) -> OSError:
+    """Make the mock transport behave like a serial link that has gone away.
+
+    Writes fail, and so does ``wait_closed()``: serialx re-raises the error
+    that broke the connection when the stream is closed afterwards.
+    """
+    err = OSError(5, "ESPHome API connection closed")
+    mock_serial.writer.write.side_effect = err
+    mock_serial.writer.wait_closed.side_effect = err
+    return err
+
+
+async def test_write_error_on_broken_transport_tears_down(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A transport that also fails on close must not leave a dead writer behind."""
+    received: list = []
+    tv.subscribe(received.append)
+    _break_transport(mock_serial)
+
+    with pytest.raises(OSError):
+        await tv.power_on()
+
+    assert not tv.connected
+    assert tv._writer is None
+    assert tv._reader is None
+    assert tv._read_task is None
+    assert received == [None]
+
+    # Later commands fail fast instead of writing to the dead stream again.
+    mock_serial.writer.write.reset_mock()
+    with pytest.raises(SamsungTVError, match="Not connected"):
+        await tv.power_on()
+    mock_serial.writer.write.assert_not_called()
+
+
+async def test_read_error_on_broken_transport_tears_down(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """The read loop must finish cleanly even when closing the transport fails."""
+    read_task = tv._read_task
+    assert read_task is not None
+    err = _break_transport(mock_serial)
+
+    mock_serial.reader.set_exception(err)
+    # Raised out of the task (and was left unretrieved) before the fix.
+    await read_task
+
+    assert not tv.connected
+    assert tv._writer is None
+    with pytest.raises(SamsungTVError, match="Not connected"):
+        await tv.power_on()
+
+
+async def test_reconnect_after_broken_transport(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """After a broken link is torn down, connect() brings the TV back."""
+    _break_transport(mock_serial)
+    with pytest.raises(OSError):
+        await tv.power_on()
+    assert not tv.connected
+
+    fresh = MockSerialConnection()
+
+    async def fake_open(*args, **kwargs):
+        return fresh.reader, fresh.writer
+
+    with patch(
+        "samsung_exlink.tv.serialx.open_serial_connection",
+        side_effect=fake_open,
+    ):
+        await tv.connect()
+
+    assert tv.connected
+    await tv.power_on()
+    assert fresh.last_frame.hex(" ") == "08 22 00 00 00 02 d4"
+    assert tv.power is True
 
 
 async def test_connect_failure_propagates(mock_serial: MockSerialConnection) -> None:
