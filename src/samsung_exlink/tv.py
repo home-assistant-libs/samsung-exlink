@@ -84,6 +84,7 @@ class SamsungTV:
         # Only one outstanding command at a time; protected by _write_lock.
         self._pending: PendingResponse | None = None
         self._pending_expects_query: bool = False
+        self._unknown_power_bytes: set[int] = set()
         # Mapping of InputSource -> source byte returned by query_source().
         # Pre-populate from ``model`` and/or ``source_map`` to skip
         # probe_sources() on subsequent runs.
@@ -261,9 +262,26 @@ class SamsungTV:
         return response
 
     async def query_power(self) -> PowerState:
-        """Query the TV's power state."""
+        """Query the TV's power state.
+
+        A byte not listed in ``PowerState`` is returned as
+        ``PowerState.UNKNOWN`` (and logged once) rather than raising: the
+        set of values differs across generations and ``0x05`` is the only
+        one that has ever meant "on". Either way ``state.power`` is set to
+        whether the TV reported ``PowerState.ON``.
+        """
         resp = await self._query(QueryCategory.POWER)
-        state = PowerState(resp.value)
+        try:
+            state = PowerState(resp.value)
+        except ValueError:
+            state = PowerState.UNKNOWN
+            if resp.value not in self._unknown_power_bytes:
+                self._unknown_power_bytes.add(resp.value)
+                _LOGGER.warning(
+                    "Unrecognised power state byte 0x%02x; treating as not on. "
+                    "Please report it with your TV model.",
+                    resp.value,
+                )
         self._update_state(power=(state is PowerState.ON))
         return state
 
@@ -368,11 +386,11 @@ class SamsungTV:
     async def refresh(self) -> None:
         """Refresh power and, when the TV is on, volume/mute/source.
 
-        A powered-off Samsung TV does not answer status queries -- that is
-        expected, not an error. When the power query times out (or reports a
-        non-on state) ``power`` is set to ``False`` and the remaining
-        attributes are left untouched. Connection errors propagate so the
-        caller can tear down and reconnect.
+        Older Samsung TVs do not answer status queries while powered off --
+        that is expected, not an error. Newer sets do answer, reporting a
+        non-on power state. In both cases ``power`` is set to ``False`` and
+        the remaining attributes are left untouched. Connection errors
+        propagate so the caller can tear down and reconnect.
 
         ``input_source`` is only refreshed when a source map is configured,
         since the raw source byte cannot otherwise be translated.

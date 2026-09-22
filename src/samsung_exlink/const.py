@@ -43,11 +43,20 @@ class PowerCommand(Enum):
 
 
 class PowerState(Enum):
-    """Power state values returned by ``query_power``."""
+    """Power state values returned by ``query_power``.
 
+    ``UNKNOWN`` is not a wire value: ``query_power`` returns it when the TV
+    reports a byte this library does not recognise, so that a new or
+    undocumented value degrades to "not on" instead of raising.
+    """
+
+    #: Reported by newer sets (2023 Q80C, 2024 Frame LS03D) when fully off.
+    #: Unlike older generations, these TVs answer status queries while off.
+    FULL_OFF = 0x00
     STANDBY = 0x04
     ON = 0x05
     OFF = 0x08
+    UNKNOWN = -1
 
 
 class QueryCategory(Enum):

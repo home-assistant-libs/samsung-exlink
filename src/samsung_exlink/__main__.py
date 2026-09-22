@@ -62,7 +62,9 @@ async def _print_status(tv: SamsungTV) -> None:
     raw_source = await _query_safe(tv.query_source())
     channel = await _query_safe(tv.query_channel())
 
-    if isinstance(power, PowerState):
+    if power is PowerState.UNKNOWN:
+        power_str = power.name
+    elif isinstance(power, PowerState):
         power_str = f"{power.name} (0x{power.value:02x})"
     else:
         power_str = str(power)

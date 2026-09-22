@@ -131,7 +131,7 @@ methods below. Power state is unknown after connect; call `power_on()` /
 Some TVs answer a small set of status queries directly:
 
 ```python
-await tv.query_power()          # PowerState.ON / STANDBY / OFF
+await tv.query_power()          # PowerState.ON / STANDBY / OFF / FULL_OFF / UNKNOWN
 await tv.query_volume()         # 0-100
 await tv.query_mute()           # bool
 await tv.query_channel()        # (major, mid, minor)
