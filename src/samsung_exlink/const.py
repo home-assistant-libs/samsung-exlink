@@ -45,6 +45,7 @@ class PowerCommand(Enum):
 class PowerState(Enum):
     """Power state values returned by ``query_power``."""
 
+    FULL_OFF = 0x00
     STANDBY = 0x04
     ON = 0x05
     OFF = 0x08

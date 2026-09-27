@@ -312,6 +312,19 @@ async def test_query_power_on(
     assert mock_serial.last_payload == (0xF0, 0x00, 0x00, 0x00)
 
 
+async def test_query_power_full_off(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """Newer sets answer while fully off with 0x00."""
+    mock_serial.set_command_handler(_status_handler(mock_serial, {0x00: 0x00}))
+    tv._state.power = True
+
+    state = await tv.query_power()
+
+    assert state is PowerState.FULL_OFF
+    assert tv.state.power is False
+
+
 async def test_query_volume(tv: SamsungTV, mock_serial: MockSerialConnection) -> None:
     composite = bytes.fromhex(
         "03 0c f1 03 0c f5 08 f0 01 00 00 f1 19 00 00 f9"
@@ -661,3 +674,20 @@ async def test_refresh_when_off_sets_power_false(
 
     assert tv.state.power is False
     assert tv.state.volume is None
+
+
+@pytest.mark.parametrize("power_byte", [0x00, 0x04, 0x08])
+async def test_refresh_when_not_on_skips_remaining_queries(
+    tv: SamsungTV, mock_serial: MockSerialConnection, power_byte: int
+) -> None:
+    """A TV that answers with a non-on power byte is off."""
+    mock_serial.set_command_handler(
+        _status_handler(mock_serial, {0x00: power_byte, 0x01: 25, 0x02: 0x00})
+    )
+
+    await tv.refresh()
+
+    assert tv.state.power is False
+    assert tv.state.volume is None
+    assert tv.state.mute is None
+    assert len(mock_serial.written_frames) == 1
