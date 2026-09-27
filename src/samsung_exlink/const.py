@@ -45,7 +45,6 @@ class PowerCommand(Enum):
 class PowerState(Enum):
     """Power state values returned by ``query_power``."""
 
-    # Newer sets answer status queries while fully off.
     FULL_OFF = 0x00
     STANDBY = 0x04
     ON = 0x05
