@@ -101,6 +101,16 @@ async def test_set_art_mode_on(
 ) -> None:
     await tv.set_art_mode(True)
     assert mock_serial.last_payload == (0x0B, 0x0B, 0x0E, 0x01)
+    assert tv.state.art_mode is True
+
+
+async def test_select_input_leaves_art_mode(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """Selecting a source takes a Frame TV out of Art Mode."""
+    await tv.set_art_mode(True)
+    await tv.select_input_source(InputSource.HDMI1)
+    assert tv.state.art_mode is False
 
 
 async def test_set_ambient_mode_off(
@@ -691,3 +701,57 @@ async def test_refresh_when_not_on_skips_remaining_queries(
     assert tv.state.volume is None
     assert tv.state.mute is None
     assert len(mock_serial.written_frames) == 1
+
+
+@pytest.mark.parametrize(("value", "expected"), [(0x00, True), (0x01, False)])
+async def test_query_art_mode(
+    tv: SamsungTV, mock_serial: MockSerialConnection, value: int, expected: bool
+) -> None:
+    """Category 0x16 reads 0 in Art Mode and 1 otherwise."""
+    mock_serial.set_command_handler(_status_handler(mock_serial, {0x16: value}))
+
+    assert await tv.query_art_mode() is expected
+    assert mock_serial.last_payload == (0xF0, 0x16, 0x00, 0x00)
+    assert tv.state.art_mode is expected
+
+
+async def test_refresh_queries_art_mode_for_frame(
+    mock_serial: MockSerialConnection,
+) -> None:
+    """refresh reads Art Mode when the model reports it."""
+    from samsung_exlink.models import FRAME_2022
+
+    tv = SamsungTV("/dev/ttyUSB0", model=FRAME_2022)
+
+    async def fake_open(*args, **kwargs):
+        return mock_serial.reader, mock_serial.writer
+
+    with patch(
+        "samsung_exlink.tv.serialx.open_serial_connection",
+        side_effect=fake_open,
+    ):
+        await tv.connect()
+    try:
+        mock_serial.set_command_handler(
+            _status_handler(
+                mock_serial, {0x00: 0x05, 0x01: 25, 0x02: 0x00, 0x04: 0x48, 0x16: 0x00}
+            )
+        )
+        await tv.refresh()
+        assert tv.state.art_mode is True
+    finally:
+        await tv.disconnect()
+
+
+async def test_refresh_skips_art_mode_without_model(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """refresh does not send the undocumented query to an unknown model."""
+    mock_serial.set_command_handler(
+        _status_handler(mock_serial, {0x00: 0x05, 0x01: 25, 0x02: 0x00, 0x16: 0x00})
+    )
+
+    await tv.refresh()
+
+    assert tv.state.art_mode is None
+    assert all(frame[3] != 0x16 for frame in mock_serial.written_frames)

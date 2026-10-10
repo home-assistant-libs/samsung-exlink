@@ -3,7 +3,7 @@
 Different generations of Samsung consumer TVs map the same set of physical
 inputs to different bytes in the ``cmd1=0xF0 cat=SOURCE`` query response.
 A ``TVModel`` records the per-generation source map (and any other quirks
-worth captring) so ``SamsungTV(port, model=...)`` can skip a probe.
+worth capturing) so ``SamsungTV(port, model=...)`` can skip a probe.
 """
 
 from __future__ import annotations
@@ -21,6 +21,8 @@ class TVModel:
     #: Map of ``InputSource`` to the byte that ``query_source()`` returns
     #: when that source is active.
     source_map: dict[InputSource, int]
+    #: Whether the TV has Art Mode and reports it via ``query_art_mode()``.
+    art_mode: bool = False
 
 
 # 2022 Frame (LS03B) and similar QLED / Neo QLED of the same generation.
@@ -34,6 +36,7 @@ FRAME_2022 = TVModel(
         InputSource.HDMI3: 0x49,
         InputSource.HDMI4: 0x4A,
     },
+    art_mode=True,
 )
 
 # 2016 H-series (e.g. UN58H5203) -- values documented in

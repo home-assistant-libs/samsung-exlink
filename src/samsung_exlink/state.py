@@ -2,8 +2,8 @@
 
 The TV's state comes from two sources: the commands the library sends
 (assuming the TV accepted them), and the ``query_*`` methods, which read
-power/volume/mute/channel/source back from the TV. Fields default to ``None``
-until first set or queried.
+power/volume/mute/channel/source (and Art Mode on Frame TVs) back from the
+TV. Fields default to ``None`` until first set or queried.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ class TVState:
     mute: bool | None = None
     picture_mode: PictureMode | None = None
     sound_mode: SoundMode | None = None
+    art_mode: bool | None = None
 
     def copy(self) -> TVState:
         return replace(self)

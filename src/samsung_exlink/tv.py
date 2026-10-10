@@ -202,7 +202,11 @@ class SamsungTV:
         """Switch to the given input source."""
         cmd3, value = source.value
         await self._send_command(0x0A, 0x00, cmd3, value)
-        self._update_state(input_source=source)
+        # Selecting a source leaves Art Mode on a Frame TV.
+        if self._state.art_mode:
+            self._update_state(input_source=source, art_mode=False)
+        else:
+            self._update_state(input_source=source)
 
     async def set_picture_mode(self, mode: PictureMode) -> None:
         """Set the picture mode."""
@@ -215,8 +219,9 @@ class SamsungTV:
         self._update_state(sound_mode=mode)
 
     async def set_art_mode(self, on: bool) -> None:
-        """Toggle Art Mode (Frame TVs)."""
+        """Turn Art Mode on or off (Frame TVs)."""
         await self._send_command(0x0B, 0x0B, 0x0E, 0x01 if on else 0x00)
+        self._update_state(art_mode=on)
 
     async def set_ambient_mode(self, on: bool) -> None:
         """Toggle Ambient Mode."""
@@ -279,6 +284,18 @@ class SamsungTV:
         muted = resp.value != 0
         self._update_state(mute=muted)
         return muted
+
+    async def query_art_mode(self) -> bool:
+        """Query whether Art Mode is on (Frame TVs).
+
+        This uses an undocumented query category. Only call it on a TV whose
+        model reports ``art_mode``; other TVs may answer with an unrelated
+        value.
+        """
+        resp = await self._query(QueryCategory.ART_MODE)
+        art_mode = resp.value == 0
+        self._update_state(art_mode=art_mode)
+        return art_mode
 
     async def query_channel(self) -> tuple[int, int, int]:
         """Query the current channel as ``(major, mid, minor)``."""
@@ -376,6 +393,7 @@ class SamsungTV:
 
         ``input_source`` is only refreshed when a source map is configured,
         since the raw source byte cannot otherwise be translated.
+        ``art_mode`` is only refreshed when the model reports Art Mode.
         """
         try:
             power = await self.query_power()
@@ -395,6 +413,12 @@ class SamsungTV:
         if self._source_map:
             try:
                 await self.query_source_input()
+            except TimeoutError:
+                pass
+
+        if self._model is not None and self._model.art_mode:
+            try:
+                await self.query_art_mode()
             except TimeoutError:
                 pass
 
