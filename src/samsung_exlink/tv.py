@@ -47,6 +47,8 @@ _LOGGER = logging.getLogger(__name__)
 
 
 StateCallback = Callable[[TVState | None], None]
+#: Called with ``(cmd1, cmd2, cmd3, value)`` of a command frame from the TV.
+FrameCallback = Callable[[int, int, int, int], None]
 
 
 class SamsungTVError(Exception):
@@ -93,6 +95,7 @@ class SamsungTV:
         self._state = TVState()
         self._subscribers: list[StateCallback] = []
         self._warned_power_bytes: set[int] = set()
+        self._frame_subscribers: list[FrameCallback] = []
         self._write_lock = asyncio.Lock()
         # Serializes set_mute()'s read-then-toggle across separate frames.
         self._mute_lock = asyncio.Lock()
@@ -142,6 +145,16 @@ class SamsungTV:
         """Subscribe to state changes. Returns an unsubscribe function."""
         self._subscribers.append(callback)
         return lambda: self._subscribers.remove(callback)
+
+    def subscribe_frames(self, callback: FrameCallback) -> Callable[[], None]:
+        """Subscribe to command frames the TV sends on its own.
+
+        Some TVs send a 7-byte command frame, for example when the remote is
+        used. The callback receives ``(cmd1, cmd2, cmd3, value)``. Returns an
+        unsubscribe function.
+        """
+        self._frame_subscribers.append(callback)
+        return lambda: self._frame_subscribers.remove(callback)
 
     async def connect(self) -> None:
         """Open the serial connection.
@@ -709,6 +722,11 @@ class SamsungTV:
         _LOGGER.debug(
             "Received command frame: %02x %02x %02x %02x", cmd1, cmd2, cmd3, value
         )
+        for callback in list(self._frame_subscribers):
+            try:
+                callback(cmd1, cmd2, cmd3, value)
+            except Exception:
+                _LOGGER.exception("Error in frame callback %s", callback)
 
     def _update_state(self, **changes: object) -> None:
         """Update the state and notify subscribers if anything changed."""
@@ -736,6 +754,7 @@ __all__ = [
     "NACK_RESPONSE",
     "RESPONSE_LENGTH",
     "CommandRejected",
+    "FrameCallback",
     "SamsungTV",
     "SamsungTVConnectionError",
     "SamsungTVError",

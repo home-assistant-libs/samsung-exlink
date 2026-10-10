@@ -37,6 +37,7 @@ from .protocol import (
 from .state import TVState
 from .tv import (
     CommandRejected,
+    FrameCallback,
     SamsungTV,
     SamsungTVConnectionError,
     SamsungTVError,
@@ -52,6 +53,7 @@ __all__ = [
     "ColorTone",
     "CommandRejected",
     "FRAME_LENGTH",
+    "FrameCallback",
     "HEADER",
     "InputSource",
     "Key",

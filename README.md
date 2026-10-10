@@ -65,7 +65,7 @@ python -m samsung_exlink /dev/ttyUSB0 source HDMI1
 python -m samsung_exlink /dev/ttyUSB0 key KEY_MENU
 python -m samsung_exlink /dev/ttyUSB0 raw 0d 00 00 1a   # MENU via raw command
 python -m samsung_exlink /dev/ttyUSB0 status           # query power/volume/mute/source/channel
-python -m samsung_exlink /dev/ttyUSB0 listen           # passively log frames
+python -m samsung_exlink /dev/ttyUSB0 listen           # print frames the TV sends
 ```
 
 The `status` command queries the TV directly. To translate the raw source
@@ -168,6 +168,16 @@ unsubscribe = tv.subscribe(on_state_change)
 
 The callback is called with a `TVState` snapshot on each change, or `None`
 when the connection is torn down.
+
+Some TVs also send 7-byte command frames on their own, for example when the
+remote is used. Subscribe to them to react, such as by calling `refresh()`:
+
+```python
+def on_frame(cmd1, cmd2, cmd3, value):
+    print(f"TV sent {cmd1:02x} {cmd2:02x} {cmd3:02x} {value:02x}")
+
+unsubscribe = tv.subscribe_frames(on_frame)
+```
 
 ### Raw access
 
