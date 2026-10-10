@@ -165,6 +165,17 @@ async def test_subscribe_receives_state_changes(
     assert states[-1].volume == 50
 
 
+async def test_unsubscribe_twice_is_noop(tv: SamsungTV) -> None:
+    received: list = []
+    unsubscribe = tv.subscribe(received.append)
+
+    unsubscribe()
+    unsubscribe()
+
+    await tv.power_on()
+    assert received == []
+
+
 async def test_disconnect_notifies_subscribers_with_none(
     tv: SamsungTV, mock_serial: MockSerialConnection
 ) -> None:

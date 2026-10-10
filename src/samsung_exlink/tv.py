@@ -143,9 +143,17 @@ class SamsungTV:
         return self._model
 
     def subscribe(self, callback: StateCallback) -> Callable[[], None]:
-        """Subscribe to state changes. Returns an unsubscribe function."""
+        """Subscribe to state changes. Returns an unsubscribe function.
+
+        Calling the unsubscribe function more than once is a no-op.
+        """
         self._subscribers.append(callback)
-        return lambda: self._subscribers.remove(callback)
+
+        def unsubscribe() -> None:
+            if callback in self._subscribers:
+                self._subscribers.remove(callback)
+
+        return unsubscribe
 
     def subscribe_frames(self, callback: FrameCallback) -> Callable[[], None]:
         """Subscribe to command frames the TV sends on its own.
