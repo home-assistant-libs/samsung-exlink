@@ -143,19 +143,32 @@ class SamsungTV:
         return self._model
 
     def subscribe(self, callback: StateCallback) -> Callable[[], None]:
-        """Subscribe to state changes. Returns an unsubscribe function."""
+        """Subscribe to state changes. Returns an unsubscribe function.
+
+        Calling the unsubscribe function more than once is a no-op.
+        """
         self._subscribers.append(callback)
-        return lambda: self._subscribers.remove(callback)
+
+        def unsubscribe() -> None:
+            if callback in self._subscribers:
+                self._subscribers.remove(callback)
+
+        return unsubscribe
 
     def subscribe_frames(self, callback: FrameCallback) -> Callable[[], None]:
         """Subscribe to command frames the TV sends on its own.
 
         Some TVs send a 7-byte command frame, for example when the remote is
         used. The callback receives ``(cmd1, cmd2, cmd3, value)``. Returns an
-        unsubscribe function.
+        unsubscribe function; calling it more than once is a no-op.
         """
         self._frame_subscribers.append(callback)
-        return lambda: self._frame_subscribers.remove(callback)
+
+        def unsubscribe() -> None:
+            if callback in self._frame_subscribers:
+                self._frame_subscribers.remove(callback)
+
+        return unsubscribe
 
     async def connect(self) -> None:
         """Open the serial connection.
