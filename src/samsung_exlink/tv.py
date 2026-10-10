@@ -142,7 +142,13 @@ class SamsungTV:
         return lambda: self._subscribers.remove(callback)
 
     async def connect(self) -> None:
-        """Open the serial connection."""
+        """Open the serial connection.
+
+        Raises ``SamsungTVError`` if already connected. Call ``disconnect()``
+        first to reconnect.
+        """
+        if self._connected:
+            raise SamsungTVError("Already connected")
         self._reader, self._writer = await serialx.open_serial_connection(
             self._port,
             baudrate=BAUD_RATE,

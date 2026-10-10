@@ -364,6 +364,22 @@ async def test_connect_does_not_log_api_key(
     assert "SECRET" not in caplog.text
 
 
+async def test_connect_when_connected_raises(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A second connect() must not replace and leak the open connection."""
+    with (
+        patch("samsung_exlink.tv.serialx.open_serial_connection") as mock_open,
+        pytest.raises(SamsungTVError, match="Already connected"),
+    ):
+        await tv.connect()
+
+    mock_open.assert_not_called()
+    mock_serial.writer.close.assert_not_called()
+    assert tv.connected
+    await tv.power_on()
+
+
 async def test_connect_failure_propagates(mock_serial: MockSerialConnection) -> None:
     tv = SamsungTV("/dev/ttyUSB0")
     err = OSError("no port")
