@@ -327,6 +327,26 @@ async def test_reconnect_after_broken_transport(
     assert tv.power is True
 
 
+async def test_connect_does_not_log_api_key(
+    mock_serial: MockSerialConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    tv = SamsungTV("esphome://192.168.1.2/?port_name=TTL&key=SECRET")
+
+    async def fake_open(*args, **kwargs):
+        return mock_serial.reader, mock_serial.writer
+
+    caplog.set_level("INFO")
+    with patch(
+        "samsung_exlink.tv.serialx.open_serial_connection",
+        side_effect=fake_open,
+    ):
+        await tv.connect()
+    await tv.disconnect()
+
+    assert "esphome://192.168.1.2/" in caplog.text
+    assert "SECRET" not in caplog.text
+
+
 async def test_connect_failure_propagates(mock_serial: MockSerialConnection) -> None:
     tv = SamsungTV("/dev/ttyUSB0")
     err = OSError("no port")
