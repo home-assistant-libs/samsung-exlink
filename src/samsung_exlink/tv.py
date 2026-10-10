@@ -92,6 +92,7 @@ class SamsungTV:
         self._reader: asyncio.StreamReader | None = None
         self._writer: serialx.SerialStreamWriter | None = None
         self._read_task: asyncio.Task | None = None
+        self._teardown_task: asyncio.Task | None = None
         self._state = TVState()
         self._subscribers: list[StateCallback] = []
         self._warned_power_bytes: set[int] = set()
@@ -170,6 +171,7 @@ class SamsungTV:
         )
         self._connected = True
         self._read_task = asyncio.create_task(self._read_loop())
+        self._read_task.add_done_callback(self._on_read_task_done)
         # An ESPHome proxy URL can carry its API key in the query string.
         _LOGGER.info("Connected to Samsung TV on %s", self._port.split("?", 1)[0])
 
@@ -603,6 +605,19 @@ class SamsungTV:
                 _LOGGER.debug("Error closing serial port", exc_info=True)
 
         self._notify_subscribers()
+
+    def _on_read_task_done(self, task: asyncio.Task) -> None:
+        """Tear down the connection if the read loop died with an error."""
+        if task.cancelled() or (err := task.exception()) is None:
+            return
+        _LOGGER.error("Read loop failed", exc_info=err)
+        if self._read_task is not task:
+            return
+        # _teardown() would await the task and re-raise its error.
+        self._read_task = None
+        self._teardown_task = asyncio.get_running_loop().create_task(
+            self._teardown()
+        )
 
     async def _read_loop(self) -> None:
         """Continuously read responses and unsolicited frames from the TV."""
