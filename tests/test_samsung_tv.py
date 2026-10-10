@@ -411,6 +411,50 @@ async def test_query_power_full_off(
     assert tv.state.power is False
 
 
+async def test_query_nack_raises_command_rejected(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    mock_serial.set_auto_response(NACK_RESPONSE)
+
+    with pytest.raises(CommandRejected, match="POWER"):
+        await tv.query_power()
+
+
+async def test_refresh_when_queries_rejected(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A TV that rejects status queries leaves the state unknown."""
+    mock_serial.set_auto_response(NACK_RESPONSE)
+
+    await tv.refresh()
+
+    assert tv.state.power is None
+    assert len(mock_serial.written_frames) == 1
+
+
+async def test_refresh_skips_rejected_queries_when_on(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """refresh() keeps going when the TV rejects one of the later queries."""
+
+    def handler(frame: bytes) -> None:
+        category = frame[3]
+        if category == 0x00:
+            mock_serial.feed(_query_response(0x00, 0x05))
+        elif category == 0x02:
+            mock_serial.feed(_query_response(0x02, 0x01))
+        else:
+            mock_serial.feed(NACK_RESPONSE)
+
+    mock_serial.set_command_handler(handler)
+
+    await tv.refresh()
+
+    assert tv.state.power is True
+    assert tv.state.volume is None
+    assert tv.state.mute is True
+
+
 async def test_query_volume(tv: SamsungTV, mock_serial: MockSerialConnection) -> None:
     composite = bytes.fromhex(
         "03 0c f1 03 0c f5 08 f0 01 00 00 f1 19 00 00 f9"
