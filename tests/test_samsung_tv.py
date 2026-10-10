@@ -21,6 +21,7 @@ from samsung_exlink import (
     SamsungTVConnectionError,
     SamsungTVError,
     SoundMode,
+    UnknownPowerState,
     build_frame,
 )
 
@@ -453,6 +454,33 @@ async def test_refresh_skips_rejected_queries_when_on(
     assert tv.state.power is True
     assert tv.state.volume is None
     assert tv.state.mute is True
+
+
+async def test_query_power_unknown_byte(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    mock_serial.set_command_handler(_status_handler(mock_serial, {0x00: 0x07}))
+
+    with pytest.raises(UnknownPowerState, match="0x07"):
+        await tv.query_power()
+
+
+async def test_refresh_unknown_power_byte_treated_as_off(
+    tv: SamsungTV,
+    mock_serial: MockSerialConnection,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """refresh() reads an unknown power byte as off and warns only once."""
+    mock_serial.set_command_handler(
+        _status_handler(mock_serial, {0x00: 0x07, 0x01: 25, 0x02: 0x00})
+    )
+
+    await tv.refresh()
+    await tv.refresh()
+
+    assert tv.state.power is False
+    assert tv.state.volume is None
+    assert caplog.text.count("Unknown power state byte 0x07") == 1
 
 
 async def test_query_volume(tv: SamsungTV, mock_serial: MockSerialConnection) -> None:

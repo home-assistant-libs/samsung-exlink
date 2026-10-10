@@ -41,6 +41,7 @@ from .tv import (
     SamsungTVConnectionError,
     SamsungTVError,
     StateCallback,
+    UnknownPowerState,
 )
 
 __all__ = [
@@ -76,6 +77,7 @@ __all__ = [
     "StateCallback",
     "TVModel",
     "TVState",
+    "UnknownPowerState",
     "build_frame",
     "calculate_checksum",
     "is_ack",

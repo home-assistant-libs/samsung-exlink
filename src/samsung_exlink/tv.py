@@ -61,6 +61,14 @@ class SamsungTVConnectionError(SamsungTVError, ConnectionError):
     """Raised when the serial connection is not open or is lost."""
 
 
+class UnknownPowerState(SamsungTVError):
+    """Raised when the TV reports a power byte that is not a PowerState."""
+
+    def __init__(self, value: int) -> None:
+        super().__init__(f"Unknown power state byte 0x{value:02x}")
+        self.value = value
+
+
 class SamsungTV:
     """Async controller for a Samsung consumer TV over RS232.
 
@@ -84,6 +92,7 @@ class SamsungTV:
         self._read_task: asyncio.Task | None = None
         self._state = TVState()
         self._subscribers: list[StateCallback] = []
+        self._warned_power_bytes: set[int] = set()
         self._write_lock = asyncio.Lock()
         self._connected = False
         # Only one outstanding command at a time; protected by _write_lock.
@@ -276,9 +285,15 @@ class SamsungTV:
         return response
 
     async def query_power(self) -> PowerState:
-        """Query the TV's power state."""
+        """Query the TV's power state.
+
+        Raises ``UnknownPowerState`` if the byte is not a ``PowerState``.
+        """
         resp = await self._query(QueryCategory.POWER)
-        state = PowerState(resp.value)
+        try:
+            state = PowerState(resp.value)
+        except ValueError:
+            raise UnknownPowerState(resp.value) from None
         self._update_state(power=(state is PowerState.ON))
         return state
 
@@ -397,12 +412,12 @@ class SamsungTV:
 
         A powered-off Samsung TV does not answer status queries -- that is
         expected, not an error. When the power query times out (or reports a
-        non-on state) ``power`` is set to ``False`` and the remaining
-        attributes are left untouched. A TV that rejects a status query
-        (NACK) does not support it: a rejected power query leaves all state
-        unknown, and other rejected queries are skipped.
-        ``SamsungTVConnectionError`` propagates so the caller can tear down and
-        reconnect.
+        non-on or unknown state) ``power`` is set to ``False`` and the
+        remaining attributes are left untouched. An unknown power byte is
+        logged once as a warning. A TV that rejects a status query (NACK)
+        does not support it: a rejected power query leaves all state unknown,
+        and other rejected queries are skipped. ``SamsungTVConnectionError``
+        propagates so the caller can tear down and reconnect.
 
         ``input_source`` is only refreshed when a source map is configured,
         since the raw source byte cannot otherwise be translated.
@@ -414,6 +429,16 @@ class SamsungTV:
             self._update_state(power=False)
             return
         except CommandRejected:
+            return
+        except UnknownPowerState as err:
+            if err.value not in self._warned_power_bytes:
+                self._warned_power_bytes.add(err.value)
+                _LOGGER.warning(
+                    "%s, treating the TV as off. Please report this with your "
+                    "TV model",
+                    err,
+                )
+            self._update_state(power=False)
             return
 
         if power is not PowerState.ON:
@@ -706,4 +731,5 @@ __all__ = [
     "SamsungTVConnectionError",
     "SamsungTVError",
     "StateCallback",
+    "UnknownPowerState",
 ]
