@@ -80,6 +80,8 @@ class SamsungTV:
         self._state = TVState()
         self._subscribers: list[StateCallback] = []
         self._write_lock = asyncio.Lock()
+        # Serializes set_mute()'s read-then-toggle across separate frames.
+        self._mute_lock = asyncio.Lock()
         self._connected = False
         # Only one outstanding command at a time; protected by _write_lock.
         self._pending: PendingResponse | None = None
@@ -184,11 +186,12 @@ class SamsungTV:
         state (querying the TV when it is unknown) and toggles only when it
         differs from the requested state.
         """
-        current = self._state.mute
-        if current is None:
-            current = await self.query_mute()
-        if current != muted:
-            await self.mute()
+        async with self._mute_lock:
+            current = self._state.mute
+            if current is None:
+                current = await self.query_mute()
+            if current != muted:
+                await self.mute()
 
     async def channel_up(self) -> None:
         """Channel up."""
