@@ -348,6 +348,23 @@ async def test_read_error_on_broken_transport_tears_down(
         await tv.power_on()
 
 
+async def test_read_loop_crash_tears_down(
+    tv: SamsungTV,
+    mock_serial: MockSerialConnection,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unexpected error in the read loop disconnects instead of hanging."""
+    disconnected = asyncio.Event()
+    tv.subscribe(lambda state: state is None and disconnected.set())
+
+    with patch.object(tv, "_consume", side_effect=RuntimeError("boom")):
+        mock_serial.feed(b"\x00")
+        await disconnected.wait()
+
+    assert not tv.connected
+    assert "Read loop failed" in caplog.text
+
+
 async def test_reconnect_after_broken_transport(
     tv: SamsungTV, mock_serial: MockSerialConnection
 ) -> None:
