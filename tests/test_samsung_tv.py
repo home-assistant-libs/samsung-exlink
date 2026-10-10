@@ -848,6 +848,29 @@ async def test_set_mute_queries_then_toggles_when_unknown(
     assert tv.state.mute is True
 
 
+async def test_concurrent_set_mute_toggles_once(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """Two concurrent set_mute(True) calls must not both toggle."""
+    muted = False
+
+    def handler(frame: bytes) -> None:
+        nonlocal muted
+        if frame[2] == 0xF0:
+            mock_serial.feed(_query_response(0x02, int(muted)))
+        else:
+            muted = not muted
+            mock_serial.feed(ACK_RESPONSE)
+
+    mock_serial.set_command_handler(handler)
+
+    await asyncio.gather(tv.set_mute(True), tv.set_mute(True))
+
+    toggles = [f for f in mock_serial.written_frames if f[2] == 0x02]
+    assert len(toggles) == 1
+    assert muted is True
+
+
 async def test_set_mute_noop_when_already_in_state(
     tv: SamsungTV, mock_serial: MockSerialConnection
 ) -> None:
