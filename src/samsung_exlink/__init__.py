@@ -37,6 +37,7 @@ from .state import TVState
 from .tv import (
     CommandRejected,
     SamsungTV,
+    SamsungTVConnectionError,
     SamsungTVError,
     StateCallback,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "QueryResponse",
     "RESPONSE_LENGTH",
     "SamsungTV",
+    "SamsungTVConnectionError",
     "SamsungTVError",
     "SoundMode",
     "StateCallback",

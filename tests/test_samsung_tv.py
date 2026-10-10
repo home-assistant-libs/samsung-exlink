@@ -18,6 +18,7 @@ from samsung_exlink import (
     PictureMode,
     PowerState,
     SamsungTV,
+    SamsungTVConnectionError,
     SamsungTVError,
     SoundMode,
     build_frame,
@@ -265,11 +266,12 @@ async def test_write_error_on_broken_transport_tears_down(
     """A transport that also fails on close must not leave a dead writer behind."""
     received: list = []
     tv.subscribe(received.append)
-    _break_transport(mock_serial)
+    err = _break_transport(mock_serial)
 
-    with pytest.raises(OSError):
+    with pytest.raises(SamsungTVConnectionError) as exc_info:
         await tv.power_on()
 
+    assert exc_info.value.__cause__ is err
     assert not tv.connected
     assert tv._writer is None
     assert tv._reader is None
@@ -278,9 +280,23 @@ async def test_write_error_on_broken_transport_tears_down(
 
     # Later commands fail fast instead of writing to the dead stream again.
     mock_serial.writer.write.reset_mock()
-    with pytest.raises(SamsungTVError, match="Not connected"):
+    with pytest.raises(SamsungTVConnectionError, match="Not connected"):
         await tv.power_on()
     mock_serial.writer.write.assert_not_called()
+
+
+async def test_link_loss_fails_command_in_flight(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A dropped link fails the pending query instead of timing out."""
+    mock_serial.set_command_handler(lambda _frame: mock_serial.reader.feed_eof())
+
+    with pytest.raises(SamsungTVConnectionError, match="Connection lost"):
+        await tv.refresh()
+
+    assert not tv.connected
+    # A timeout would have been read as a powered-off TV.
+    assert tv.state.power is None
 
 
 async def test_read_error_on_broken_transport_tears_down(

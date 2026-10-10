@@ -56,6 +56,10 @@ class CommandRejected(SamsungTVError):
     """Raised when the TV explicitly rejects a command (NACK 03 0C FF)."""
 
 
+class SamsungTVConnectionError(SamsungTVError, ConnectionError):
+    """Raised when the serial connection is not open or is lost."""
+
+
 class SamsungTV:
     """Async controller for a Samsung consumer TV over RS232.
 
@@ -347,7 +351,7 @@ class SamsungTV:
         restored at the end -- but only if it was found during the probe.
         """
         if not self._connected:
-            raise SamsungTVError("Not connected")
+            raise SamsungTVConnectionError("Not connected")
 
         original_byte = await self.query_source()
         mapping: dict[InputSource, int] = {}
@@ -389,8 +393,8 @@ class SamsungTV:
         A powered-off Samsung TV does not answer status queries -- that is
         expected, not an error. When the power query times out (or reports a
         non-on state) ``power`` is set to ``False`` and the remaining
-        attributes are left untouched. Connection errors propagate so the
-        caller can tear down and reconnect.
+        attributes are left untouched. ``SamsungTVConnectionError`` propagates
+        so the caller can tear down and reconnect.
 
         ``input_source`` is only refreshed when a source map is configured,
         since the raw source byte cannot otherwise be translated.
@@ -462,7 +466,7 @@ class SamsungTV:
         Caller MUST hold ``self._write_lock``.
         """
         if not self._connected or self._writer is None:
-            raise SamsungTVError("Not connected")
+            raise SamsungTVConnectionError("Not connected")
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bytes | QueryResponse] = loop.create_future()
@@ -475,10 +479,15 @@ class SamsungTV:
             try:
                 self._writer.write(frame)
                 await self._writer.drain()
-            except Exception:
+            except Exception as err:
                 _LOGGER.exception("Error writing to serial port")
+                # Nobody awaits the future once the write fails, so do not let
+                # _teardown() fail it.
+                self._pending = None
                 await self._teardown()
-                raise
+                raise SamsungTVConnectionError(
+                    f"Error writing to serial port: {err}"
+                ) from err
             return await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
         finally:
             self._pending = None
@@ -494,6 +503,13 @@ class SamsungTV:
         if not self._connected:
             return
         self._connected = False
+
+        # The TV can no longer answer, so fail the command in flight now
+        # instead of letting it run into COMMAND_TIMEOUT.
+        if self._pending is not None and not self._pending.future.done():
+            self._pending.future.set_exception(
+                SamsungTVConnectionError("Connection lost")
+            )
 
         read_task, self._read_task = self._read_task, None
         writer, self._writer = self._writer, None
@@ -654,6 +670,7 @@ __all__ = [
     "RESPONSE_LENGTH",
     "CommandRejected",
     "SamsungTV",
+    "SamsungTVConnectionError",
     "SamsungTVError",
     "StateCallback",
 ]

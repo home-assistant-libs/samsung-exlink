@@ -46,6 +46,9 @@ tests/
 - `_send_command` serializes through `_write_lock`: write a frame, wait for
   the next response, raise `CommandRejected` on NACK. Status queries share the
   same lock via `_send_and_wait(..., expect_query=True)`.
+- `SamsungTVConnectionError` (a `SamsungTVError` and a `ConnectionError`)
+  means the link is not open or was lost: not connected, a failed write, or
+  a teardown while a command waits for its response.
 - `_read_loop` consumes a stream that may contain interleaved 3-byte response
   frames (`03 0C F1/FF`), 13-byte query-data frames (`03 0C F5` + 10-byte
   payload), and 7-byte echo frames (`08 22 ..`); split bytes are buffered.
