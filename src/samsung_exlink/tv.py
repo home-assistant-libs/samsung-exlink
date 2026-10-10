@@ -267,6 +267,8 @@ class SamsungTV:
             response = await self._send_and_wait(
                 0xF0, category.value, 0x00, 0x00, expect_query=True
             )
+        if isinstance(response, bytes) and is_nack(response):
+            raise CommandRejected(f"TV rejected the {category.name} query")
         if not isinstance(response, QueryResponse):
             raise SamsungTVError(
                 f"Expected query response for {category.name}, got {response!r}"
@@ -396,8 +398,11 @@ class SamsungTV:
         A powered-off Samsung TV does not answer status queries -- that is
         expected, not an error. When the power query times out (or reports a
         non-on state) ``power`` is set to ``False`` and the remaining
-        attributes are left untouched. ``SamsungTVConnectionError`` propagates
-        so the caller can tear down and reconnect.
+        attributes are left untouched. A TV that rejects a status query
+        (NACK) does not support it: a rejected power query leaves all state
+        unknown, and other rejected queries are skipped.
+        ``SamsungTVConnectionError`` propagates so the caller can tear down and
+        reconnect.
 
         ``input_source`` is only refreshed when a source map is configured,
         since the raw source byte cannot otherwise be translated.
@@ -408,6 +413,8 @@ class SamsungTV:
         except TimeoutError:
             self._update_state(power=False)
             return
+        except CommandRejected:
+            return
 
         if power is not PowerState.ON:
             return
@@ -415,19 +422,19 @@ class SamsungTV:
         for query in (self.query_volume, self.query_mute):
             try:
                 await query()
-            except TimeoutError:
+            except (TimeoutError, CommandRejected):
                 pass
 
         if self._source_map:
             try:
                 await self.query_source_input()
-            except TimeoutError:
+            except (TimeoutError, CommandRejected):
                 pass
 
         if self._model is not None and self._model.art_mode:
             try:
                 await self.query_art_mode()
-            except TimeoutError:
+            except (TimeoutError, CommandRejected):
                 pass
 
     # -- Internals --
