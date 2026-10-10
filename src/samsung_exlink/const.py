@@ -6,6 +6,9 @@ from enum import Enum
 
 BAUD_RATE = 9600
 COMMAND_TIMEOUT = 2.0  # seconds to wait for an ack/nack response
+# Seconds the next command waits after a timeout, so a late reply to the
+# timed-out command is dropped instead of answering the next one.
+LATE_RESPONSE_WINDOW = 1.0
 
 # The volume scale used by ``set_volume`` and reported by ``query_volume``.
 MAX_VOLUME = 100

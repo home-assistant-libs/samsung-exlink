@@ -15,6 +15,7 @@ from .const import (
     COMMAND_TIMEOUT,
     FRAME_LENGTH,
     HEADER,
+    LATE_RESPONSE_WINDOW,
     MAX_VOLUME,
     NACK_RESPONSE,
     QUERY_DATA_FOLLOWS,
@@ -87,6 +88,9 @@ class SamsungTV:
         self._connected = False
         # Only one outstanding command at a time; protected by _write_lock.
         self._pending: PendingResponse | None = None
+        # Loop time until which a late reply to a timed-out command may still
+        # arrive; protected by _write_lock.
+        self._late_response_deadline = 0.0
         # Mapping of InputSource -> source byte returned by query_source().
         # Pre-populate from ``model`` and/or ``source_map`` to skip
         # probe_sources() on subsequent runs.
@@ -462,12 +466,21 @@ class SamsungTV:
         the 16-byte composite reply (ACK + ``03 0c f5`` + 10-byte payload).
         Otherwise returns the raw 3-byte response.
 
+        The protocol has no sequence numbers, so a reply is credited to
+        whichever command is pending when it arrives. After a timeout, the
+        next command waits until ``LATE_RESPONSE_WINDOW`` has passed before it
+        writes. A late reply that arrives in that window finds no pending
+        command and is dropped. A reply later than that is still credited to
+        the next command.
+
         Caller MUST hold ``self._write_lock``.
         """
         if not self._connected or self._writer is None:
             raise SamsungTVConnectionError("Not connected")
 
         loop = asyncio.get_running_loop()
+        if (delay := self._late_response_deadline - loop.time()) > 0:
+            await asyncio.sleep(delay)
         future: asyncio.Future[bytes | QueryResponse] = loop.create_future()
         # A status query carries its category in cmd2.
         self._pending = PendingResponse(
@@ -489,7 +502,11 @@ class SamsungTV:
                 raise SamsungTVConnectionError(
                     f"Error writing to serial port: {err}"
                 ) from err
-            return await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
+            try:
+                return await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
+            except TimeoutError:
+                self._late_response_deadline = loop.time() + LATE_RESPONSE_WINDOW
+                raise
         finally:
             self._pending = None
 
