@@ -233,6 +233,36 @@ async def test_split_query_payload_after_echo_frame(
     assert await tv.query_volume() == 25
 
 
+async def test_subscribe_frames_receives_echo_frames(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    received: list[tuple[int, int, int, int]] = []
+    unsubscribe = tv.subscribe_frames(lambda *frame: received.append(frame))
+
+    mock_serial.feed(build_frame(0x0D, 0x00, 0x00, 0x07))
+    await asyncio.sleep(0)
+    assert received == [(0x0D, 0x00, 0x00, 0x07)]
+
+    unsubscribe()
+    mock_serial.feed(build_frame(0x0D, 0x00, 0x00, 0x0B))
+    await asyncio.sleep(0)
+    assert received == [(0x0D, 0x00, 0x00, 0x07)]
+
+
+async def test_echo_frame_between_command_and_ack(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """An echo frame ahead of the ACK does not disturb the pending command."""
+    received: list[tuple[int, int, int, int]] = []
+    tv.subscribe_frames(lambda *frame: received.append(frame))
+    mock_serial.set_auto_response(build_frame(0x0D, 0x00, 0x00, 0x07) + ACK_RESPONSE)
+
+    await tv.power_on()
+
+    assert received == [(0x0D, 0x00, 0x00, 0x07)]
+    assert tv.state.power is True
+
+
 async def test_split_response_bytes_are_buffered(
     tv: SamsungTV, mock_serial: MockSerialConnection
 ) -> None:

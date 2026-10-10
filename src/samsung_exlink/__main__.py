@@ -147,6 +147,11 @@ async def _run_command(tv: SamsungTV, args: argparse.Namespace) -> None:
     elif cmd == "status":
         await _print_status(tv)
     elif cmd == "listen":
+
+        def print_frame(cmd1: int, cmd2: int, cmd3: int, value: int) -> None:
+            print(f"Frame: {cmd1:02x} {cmd2:02x} {cmd3:02x} {value:02x}")
+
+        tv.subscribe_frames(print_frame)
         print("Listening for frames (Ctrl-C to stop)...")
         try:
             await asyncio.Event().wait()
