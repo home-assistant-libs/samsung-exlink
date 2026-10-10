@@ -9,7 +9,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "serialx[esphome]>=1.2.0",
+    "serialx[esphome]>=1.9.0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
