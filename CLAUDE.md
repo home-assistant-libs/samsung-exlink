@@ -35,7 +35,8 @@ tests/
   checksum = `(256 - sum(bytes 0..5)) & 0xFF`. TV replies `03 0C F1` (ACK) or
   `03 0C FF` (NACK).
 - Most commands are fire-and-forget (ACK/NACK only). A subset of state --
-  power, volume, mute, channel, source -- *can* be queried via the `cmd1=0xF0`
+  power, volume, mute, channel, source, and Art Mode on Frame TVs (undocumented
+  category `0x16`) -- *can* be queried via the `cmd1=0xF0`
   status frame: the TV replies with the usual ACK, then `03 0C F5` followed by
   a 10-byte payload carrying the value (`parse_query_payload` -> `QueryResponse`).
   The library tracks a `TVState`, updated both when commands succeed and when
@@ -59,10 +60,12 @@ tests/
   `SamsungTV`; everything else uses `send_key(Key.X)` or `send_raw(...)`.
 - There is one Samsung consumer-TV *command* protocol, so per-model
   capabilities (Frame Art Mode, Ambient Mode, etc.) just NACK on unsupported
-  TVs. `models.py` exists only to record the one thing that *does* vary by
-  generation: the byte `query_source()` returns for each input. Pass a
-  `TVModel` (or a raw `source_map`) to the constructor to skip
-  `probe_sources()`.
+  TVs. `models.py` records what *does* vary by generation: the byte
+  `query_source()` returns for each input, and whether the TV reports Art
+  Mode on query category `0x16`. Other TVs may answer that category with an
+  unrelated value, so `refresh()` only queries it when the model sets
+  `art_mode`. Pass a `TVModel` (or a raw `source_map`) to the constructor to
+  skip `probe_sources()`.
 
 ## Testing
 

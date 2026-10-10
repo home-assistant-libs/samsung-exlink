@@ -59,6 +59,9 @@ class QueryCategory(Enum):
     MUTE = 0x02
     CHANNEL = 0x03
     SOURCE = 0x04
+    # Undocumented. On a 2022 Frame this reads 0x00 in Art Mode and 0x01
+    # otherwise; other models may use the category for something else.
+    ART_MODE = 0x16
 
 
 class InputSource(Enum):
