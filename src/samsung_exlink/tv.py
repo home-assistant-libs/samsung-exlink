@@ -87,7 +87,6 @@ class SamsungTV:
         self._connected = False
         # Only one outstanding command at a time; protected by _write_lock.
         self._pending: PendingResponse | None = None
-        self._pending_expects_query: bool = False
         # Mapping of InputSource -> source byte returned by query_source().
         # Pre-populate from ``model`` and/or ``source_map`` to skip
         # probe_sources() on subsequent runs.
@@ -470,8 +469,10 @@ class SamsungTV:
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bytes | QueryResponse] = loop.create_future()
-        self._pending = PendingResponse(future=future)
-        self._pending_expects_query = expect_query
+        # A status query carries its category in cmd2.
+        self._pending = PendingResponse(
+            future=future, query_category=cmd2 if expect_query else None
+        )
 
         frame = build_frame(cmd1, cmd2, cmd3, value)
         _LOGGER.debug("Sending: %s", frame.hex(" "))
@@ -491,7 +492,6 @@ class SamsungTV:
             return await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
         finally:
             self._pending = None
-            self._pending_expects_query = False
 
     async def _teardown(self) -> None:
         """Tear down the connection.
@@ -611,12 +611,21 @@ class SamsungTV:
         except ValueError as err:
             _LOGGER.warning("Bad query payload %s (%s)", payload.hex(" "), err)
             return
+        pending = self._pending
         if (
-            self._pending is not None
-            and self._pending_expects_query
-            and not self._pending.future.done()
+            pending is None
+            or pending.query_category is None
+            or pending.future.done()
         ):
-            self._pending.future.set_result(parsed)
+            return
+        if parsed.category != pending.query_category:
+            _LOGGER.debug(
+                "Ignoring query payload for category 0x%02x, expected 0x%02x",
+                parsed.category,
+                pending.query_category,
+            )
+            return
+        pending.future.set_result(parsed)
 
     def _handle_response(self, response: bytes) -> None:
         _LOGGER.debug("Received response: %s", response.hex(" "))
@@ -626,7 +635,7 @@ class SamsungTV:
         ):
             # When a query is in flight, the leading ACK precedes the payload
             # we actually want -- ignore it and wait for ``03 0c f5 ...``.
-            if self._pending_expects_query and is_ack(response):
+            if self._pending.query_category is not None and is_ack(response):
                 return
             self._pending.future.set_result(response)
             return

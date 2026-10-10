@@ -700,6 +700,17 @@ def _status_handler(
     return handler
 
 
+async def test_query_ignores_payload_for_other_category(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A payload for another category must not answer the pending query."""
+    mock_serial.set_auto_response(_query_response(0x01, 0x05))
+
+    with pytest.raises(TimeoutError):
+        await tv.query_power()
+    assert tv.state.power is None
+
+
 async def test_mute_toggle_tracks_known_state(
     tv: SamsungTV, mock_serial: MockSerialConnection
 ) -> None:
