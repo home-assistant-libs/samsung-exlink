@@ -657,6 +657,29 @@ async def test_probe_sources_collapses_duplicates(
     assert tv.source_map == mapping
 
 
+async def test_late_response_not_credited_to_next_command(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """A reply that misses the timeout must not answer the next command."""
+    loop = asyncio.get_running_loop()
+
+    def handler(frame: bytes) -> None:
+        if frame[2] == 0x00:
+            # power_on: the ACK only arrives after the command timed out.
+            loop.call_later(0.15, mock_serial.feed, ACK_RESPONSE)
+        else:
+            # The TV answers in order, so this NACK follows the late ACK.
+            loop.call_later(0.08, mock_serial.feed, NACK_RESPONSE)
+
+    mock_serial.set_command_handler(handler)
+
+    with pytest.raises(TimeoutError):
+        await tv.power_on()
+    with pytest.raises(CommandRejected):
+        await tv.set_volume(10)
+    assert tv.state.volume is None
+
+
 async def test_timeout_when_no_response(mock_serial: MockSerialConnection) -> None:
     """If the TV never acks, the call raises TimeoutError."""
     tv = SamsungTV("/dev/ttyUSB0")

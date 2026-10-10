@@ -13,6 +13,7 @@ from samsung_exlink import ACK_RESPONSE, FRAME_LENGTH, NACK_RESPONSE, SamsungTV
 
 # Speed up tests by reducing the command timeout.
 samsung_tv.COMMAND_TIMEOUT = 0.1
+samsung_tv.LATE_RESPONSE_WINDOW = 0.1
 
 
 class MockSerialConnection:
