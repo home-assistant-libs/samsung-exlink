@@ -133,7 +133,8 @@ class SamsungTV:
         )
         self._connected = True
         self._read_task = asyncio.create_task(self._read_loop())
-        _LOGGER.info("Connected to Samsung TV on %s", self._port)
+        # An ESPHome proxy URL can carry its API key in the query string.
+        _LOGGER.info("Connected to Samsung TV on %s", self._port.split("?", 1)[0])
 
     async def disconnect(self) -> None:
         """Close the serial connection."""
