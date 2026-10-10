@@ -130,4 +130,6 @@ def parse_query_payload(payload: bytes) -> QueryResponse:
 class PendingResponse:
     """A pending response waiting on the read loop."""
 
-    future: asyncio.Future[bytes]
+    future: asyncio.Future[bytes | QueryResponse]
+    #: The query category the response must carry, or None for a command.
+    query_category: int | None = None
