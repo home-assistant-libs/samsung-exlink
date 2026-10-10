@@ -20,6 +20,7 @@ from samsung_exlink import (
     SamsungTV,
     SamsungTVError,
     SoundMode,
+    build_frame,
 )
 
 
@@ -189,6 +190,45 @@ async def test_subscriber_unsubscribing_during_notify_does_not_skip_others(
 
     assert seen_first  # first ran
     assert seen_second  # second was not skipped despite the mutation
+
+
+_BAD_CHECKSUM_FRAME = build_frame(0x0D, 0x00, 0x00, 0x07)[:6] + b"\x00"
+
+
+@pytest.mark.parametrize(
+    "noise",
+    [
+        pytest.param(b"\xaa\x55\x00", id="garbage"),
+        pytest.param(b"\x03\x01", id="03-not-followed-by-0c"),
+        pytest.param(b"\x08\x01", id="08-not-followed-by-22"),
+        pytest.param(_BAD_CHECKSUM_FRAME, id="bad-checksum-frame"),
+    ],
+)
+async def test_resync_after_noise(
+    tv: SamsungTV, mock_serial: MockSerialConnection, noise: bytes
+) -> None:
+    """Bytes that do not form a valid frame are skipped up to the ACK."""
+    mock_serial.set_auto_response(noise + ACK_RESPONSE)
+
+    await tv.power_on()
+
+    assert tv.state.power is True
+
+
+async def test_split_query_payload_after_echo_frame(
+    tv: SamsungTV, mock_serial: MockSerialConnection
+) -> None:
+    """An echo frame ahead of a query reply split across reads is skipped."""
+    reply = _query_response(0x01, 25)
+    loop = asyncio.get_running_loop()
+
+    def handler(_frame: bytes) -> None:
+        mock_serial.feed(build_frame(0x0D, 0x00, 0x00, 0x07) + reply[:8])
+        loop.call_later(0.005, mock_serial.feed, reply[8:])
+
+    mock_serial.set_command_handler(handler)
+
+    assert await tv.query_volume() == 25
 
 
 async def test_split_response_bytes_are_buffered(
