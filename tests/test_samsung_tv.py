@@ -7,6 +7,7 @@ from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest
+import serialx
 
 from conftest import MockSerialConnection
 from samsung_exlink import (
@@ -465,6 +466,24 @@ async def test_connect_failure_propagates(mock_serial: MockSerialConnection) -> 
     ):
         with pytest.raises(OSError):
             await tv.connect()
+    assert not tv.connected
+
+
+async def test_connect_serial_exception_raises_connection_error() -> None:
+    """A serialx error on open surfaces as SamsungTVConnectionError."""
+    tv = SamsungTV("esphome://192.168.1.2/?port_name=TTL")
+    err = serialx.SerialException("Not connected to esphome @ 192.168.1.2!")
+
+    with (
+        patch(
+            "samsung_exlink.tv.serialx.open_serial_connection",
+            side_effect=err,
+        ),
+        pytest.raises(SamsungTVConnectionError, match="Not connected") as exc_info,
+    ):
+        await tv.connect()
+
+    assert exc_info.value.__cause__ is err
     assert not tv.connected
 
 
