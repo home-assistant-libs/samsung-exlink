@@ -174,14 +174,21 @@ class SamsungTV:
         """Open the serial connection.
 
         Raises ``SamsungTVError`` if already connected. Call ``disconnect()``
-        first to reconnect.
+        first to reconnect. Raises ``SamsungTVConnectionError`` if the port
+        cannot be opened.
         """
         if self._connected:
             raise SamsungTVError("Already connected")
-        self._reader, self._writer = await serialx.open_serial_connection(
-            self._port,
-            baudrate=BAUD_RATE,
-        )
+        try:
+            self._reader, self._writer = await serialx.open_serial_connection(
+                self._port,
+                baudrate=BAUD_RATE,
+            )
+        except serialx.SerialException as err:
+            # serialx errors (e.g. an ESPHome proxy that is still rebooting)
+            # do not subclass OSError, so callers would not see them as
+            # connection failures.
+            raise SamsungTVConnectionError(str(err)) from err
         self._connected = True
         self._read_task = asyncio.create_task(self._read_loop())
         self._read_task.add_done_callback(self._on_read_task_done)
